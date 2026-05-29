@@ -167,19 +167,20 @@ fun main(argv: Array<String>) {
                         launch {
                             poll.matches.collect { m ->
                                 val receivedAt = Instant.now().toString()
+                                val song = m.song
                                 val row = listOf(
                                     receivedAt,
-                                    m.radioId.toString(),
+                                    m.radioId?.toString() ?: "",
                                     m.timestamp ?: "",
-                                    m.song.score.toString(),
-                                    m.song.artist,
-                                    m.song.title,
-                                    m.song.album ?: "",
-                                    m.song.songLink ?: "",
+                                    song?.score?.toString() ?: "",
+                                    song?.artist ?: "",
+                                    song?.title ?: "",
+                                    song?.album ?: "",
+                                    song?.songLink ?: "",
                                 ).joinToString(",") { csvEscape(it) }
                                 writer.println(row)
                                 writer.flush()
-                                println("[match radio=${m.radioId} score=${m.song.score}] ${m.song.artist} — ${m.song.title}")
+                                println("[match radio=${m.radioId} score=${song?.score}] ${song?.artist} — ${song?.title}")
                             }
                         }
                         launch {

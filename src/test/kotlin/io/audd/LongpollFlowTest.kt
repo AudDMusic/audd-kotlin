@@ -93,7 +93,7 @@ class LongpollFlowTest {
                 val match = poll.matches.first()
                 val notif = poll.notifications.first()
                 assertEquals(7L, match.radioId)
-                assertEquals("Alan Walker", match.song.artist)
+                assertEquals("Alan Walker", match.song?.artist)
                 assertEquals(650, notif.notificationCode)
             } finally {
                 poll.close()
@@ -175,7 +175,7 @@ class LongpollFlowTest {
             try {
                 val match = poll.matches.first()
                 assertEquals(42L, match.radioId)
-                assertEquals("Foo", match.song.artist)
+                assertEquals("Foo", match.song?.artist)
             } finally {
                 poll.close()
             }
@@ -245,7 +245,7 @@ class LongpollFlowTest {
             try {
                 val match = poll.matches.first()
                 assertEquals(9L, match.radioId)
-                assertEquals("X", match.song.artist)
+                assertEquals("X", match.song?.artist)
             } finally {
                 poll.close()
             }

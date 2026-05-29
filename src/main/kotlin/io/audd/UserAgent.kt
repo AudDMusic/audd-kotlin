@@ -1,6 +1,6 @@
 package io.audd
 
-internal const val SDK_VERSION: String = "1.5.12"
+internal const val SDK_VERSION: String = "1.5.13"
 
 internal fun userAgent(): String {
     val kotlin = KotlinVersion.CURRENT

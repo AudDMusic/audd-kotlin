@@ -95,26 +95,20 @@ public fun parseCallback(body: String): CallbackEvent {
  * [StreamCallbackMatch.alternatives] (remaining).
  */
 private fun parseMatch(resultEl: JsonObject, fullBody: JsonObject): StreamCallbackMatch {
+    // A successful callback must never throw because a field is absent or the
+    // wrong type. Missing radio_id → null; missing/empty results → song = null.
     val radioId = resultEl["radio_id"]?.jsonPrimitive?.let { it.intOrNull?.toLong() ?: it.toString().toLongOrNull() }
-        ?: throw AudDSerializationException("callback result.radio_id missing", rawText = fullBody.toString())
     val timestamp = resultEl["timestamp"]?.jsonPrimitive?.contentOrNullSafe()
     val playLength = resultEl["play_length"]?.jsonPrimitive?.intOrNull
-    val resultsEl = resultEl["results"] as? kotlinx.serialization.json.JsonArray
-        ?: throw AudDSerializationException("callback result.results missing or not an array", rawText = fullBody.toString())
-    if (resultsEl.isEmpty()) {
-        throw AudDSerializationException("callback result.results is empty", rawText = fullBody.toString())
-    }
-    val songs = resultsEl.map { el ->
-        val obj = el as? JsonObject
-            ?: throw AudDSerializationException("callback result.results entry is not a JSON object", rawText = fullBody.toString())
+    val resultsEl: List<kotlinx.serialization.json.JsonElement> =
+        resultEl["results"] as? kotlinx.serialization.json.JsonArray ?: emptyList()
+    // Decode each candidate; skip malformed (non-object / undecodable) entries.
+    val songs = resultsEl.mapNotNull { el ->
+        val obj = el as? JsonObject ?: return@mapNotNull null
         val parsed = try {
             auddJson.decodeFromJsonElement(StreamCallbackSong.serializer(), obj)
-        } catch (e: SerializationException) {
-            throw AudDSerializationException(
-                "callback result.results entry: ${e.message}",
-                rawText = fullBody.toString(),
-                cause = e,
-            )
+        } catch (_: SerializationException) {
+            return@mapNotNull null
         }
         parsed.extras = obj.filterKeys { it !in STREAM_CALLBACK_SONG_KNOWN_KEYS }
         parsed
@@ -123,7 +117,7 @@ private fun parseMatch(resultEl: JsonObject, fullBody: JsonObject): StreamCallba
         radioId = radioId,
         timestamp = timestamp,
         playLength = playLength,
-        song = songs[0],
+        song = songs.firstOrNull(),
         alternatives = if (songs.size > 1) songs.subList(1, songs.size) else emptyList(),
     )
     match.extras = resultEl.filterKeys { it !in STREAM_CALLBACK_MATCH_KNOWN_KEYS }

@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.audd"
-version = "1.5.12"
+version = "1.5.13"
 description = "Official Kotlin SDK for the AudD music recognition API."
 
 repositories {

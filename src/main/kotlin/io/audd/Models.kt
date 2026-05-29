@@ -40,7 +40,7 @@ public enum class StreamingProvider(public val wireName: String) {
 
 @Serializable
 public data class MusicBrainzEntry(
-    val id: String,
+    val id: String? = null,
     val title: String? = null,
     val length: Long? = null,
 )
@@ -62,7 +62,7 @@ public data class MusicBrainzEntry(
  */
 @Serializable
 public data class RecognitionResult(
-    val timecode: String,
+    val timecode: String? = null,
     @SerialName("audio_id") val audioId: Long? = null,
     val artist: String? = null,
     val title: String? = null,
@@ -205,8 +205,8 @@ public sealed interface RecognitionMatch {
 
 @Serializable
 public data class EnterpriseMatch(
-    val score: Int,
-    val timecode: String,
+    val score: Int? = null,
+    val timecode: String? = null,
     val artist: String? = null,
     val title: String? = null,
     val album: String? = null,
@@ -250,15 +250,15 @@ public data class EnterpriseMatch(
 
 @Serializable
 internal data class EnterpriseChunkResult(
-    val songs: List<EnterpriseMatch>,
-    val offset: String,
+    val songs: List<EnterpriseMatch> = emptyList(),
+    val offset: String? = null,
 )
 
 @Serializable
 public data class Stream(
-    @SerialName("radio_id") val radioId: Long,
-    val url: String,
-    @SerialName("stream_running") val streamRunning: Boolean,
+    @SerialName("radio_id") val radioId: Long? = null,
+    val url: String? = null,
+    @SerialName("stream_running") val streamRunning: Boolean? = null,
     @SerialName("longpoll_category") val longpollCategory: String? = null,
 )
 
@@ -270,9 +270,9 @@ public data class Stream(
  */
 @Serializable
 public data class StreamCallbackSong(
-    val artist: String,
-    val title: String,
-    val score: Int,
+    val artist: String? = null,
+    val title: String? = null,
+    val score: Int? = null,
     val album: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
     val label: String? = null,
@@ -304,10 +304,10 @@ public data class StreamCallbackSong(
  * are equivalent.
  */
 public data class StreamCallbackMatch internal constructor(
-    val radioId: Long,
+    val radioId: Long? = null,
     val timestamp: String? = null,
     val playLength: Int? = null,
-    val song: StreamCallbackSong,
+    val song: StreamCallbackSong? = null,
     val alternatives: List<StreamCallbackSong> = emptyList(),
 ) {
     /**
@@ -331,10 +331,10 @@ public data class StreamCallbackMatch internal constructor(
  */
 @Serializable
 public data class StreamCallbackNotification(
-    @SerialName("radio_id") val radioId: Long,
+    @SerialName("radio_id") val radioId: Long? = null,
     @SerialName("stream_running") val streamRunning: Boolean? = null,
-    @SerialName("notification_code") val notificationCode: Int,
-    @SerialName("notification_message") val notificationMessage: String,
+    @SerialName("notification_code") val notificationCode: Int? = null,
+    @SerialName("notification_message") val notificationMessage: String? = null,
     /** Outer `time` field carried alongside the notification block. */
     val time: Int? = null,
 ) {
@@ -367,8 +367,8 @@ public sealed interface CallbackEvent {
 
 @Serializable
 public data class LyricsResult(
-    val artist: String,
-    val title: String,
+    val artist: String? = null,
+    val title: String? = null,
     val lyrics: String? = null,
     @SerialName("song_id") val songId: Long? = null,
     val media: String? = null,

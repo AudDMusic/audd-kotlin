@@ -64,7 +64,7 @@ class ContractTest {
         val match = json.decodeFromJsonElement(EnterpriseMatch.serializer(), firstSong)
         assertNotNull(match.isrc)
         assertNotNull(match.upc)
-        assertTrue(match.score >= 0)
+        assertTrue((match.score ?: -1) >= 0)
     }
 
     @Test
@@ -75,8 +75,8 @@ class ContractTest {
         val match = (parsed as CallbackEvent.Match).match
         assertEquals(7L, match.radioId)
         // First (and only) entry of the `results` array becomes `song`.
-        assertEquals("Alan Walker, A\$AP Rocky", match.song.artist)
-        assertEquals("Live Fast (PUBGM)", match.song.title)
+        assertEquals("Alan Walker, A\$AP Rocky", match.song?.artist)
+        assertEquals("Live Fast (PUBGM)", match.song?.title)
         assertTrue(match.alternatives.isEmpty())
     }
 

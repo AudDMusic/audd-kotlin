@@ -2,6 +2,7 @@ package io.audd
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -217,6 +218,14 @@ public data class EnterpriseMatch(
     @SerialName("song_link") val songLink: String? = null,
     @SerialName("start_offset") val startOffset: Double? = null,
     @SerialName("end_offset") val endOffset: Double? = null,
+    /**
+     * Where this song plays in the uploaded file, in seconds: the chunk's
+     * file-relative offset plus [startOffset] / [endOffset]. Computed by the
+     * SDK from the enterprise chunk anchor — not a wire field. `null` when the
+     * chunk carried no parseable offset.
+     */
+    @Transient val startSeconds: Double? = null,
+    @Transient val endSeconds: Double? = null,
 ) {
     /**
      * Server-side fields outside the typed surface. See [RecognitionResult.extras].

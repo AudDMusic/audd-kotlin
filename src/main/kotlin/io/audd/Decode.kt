@@ -96,6 +96,35 @@ private val ENTERPRISE_MATCH_KNOWN_KEYS: Set<String> = setOf(
     "isrc", "upc", "song_link", "start_offset", "end_offset",
 )
 
+/**
+ * Parse an enterprise chunk offset into seconds. Accepts `"SS"`, `"MM:SS"`,
+ * `"HH:MM:SS"`, or a bare number (string or numeric). Returns `null` on any
+ * unparseable input — never throws.
+ */
+internal fun offsetToSeconds(raw: JsonElement?): Double? {
+    if (raw == null || raw is kotlinx.serialization.json.JsonNull) return null
+    val text = when (raw) {
+        is kotlinx.serialization.json.JsonPrimitive -> raw.contentOrNull
+        else -> null
+    } ?: return null
+    return offsetToSeconds(text)
+}
+
+/** String overload: see [offsetToSeconds]. Never throws. */
+internal fun offsetToSeconds(text: String?): Double? {
+    val trimmed = text?.trim() ?: return null
+    if (trimmed.isEmpty()) return null
+    if (':' !in trimmed) return trimmed.toDoubleOrNull()
+    val parts = trimmed.split(':')
+    if (parts.size > 3) return null
+    var total = 0.0
+    for (part in parts) {
+        val value = part.toDoubleOrNull() ?: return null
+        total = total * 60.0 + value
+    }
+    return total
+}
+
 /** Parse a recognize() response — null = no match. */
 internal fun decodeRecognize(
     httpStatus: Int,
@@ -141,15 +170,30 @@ internal fun decodeEnterprise(
                 cause = exc,
             )
         }
-        // Re-walk the raw `songs` array to populate per-match extras.
+        // The chunk `offset` anchors this fragment's position in the user's
+        // file. Add it to each song's fragment-relative start/end (ms → s) so
+        // callers get absolute file positions in [EnterpriseMatch.startSeconds]
+        // / [EnterpriseMatch.endSeconds]. null offset → leave both null.
+        val base = offsetToSeconds(chunk.offset)
         val rawSongs = (chunkEl as? JsonObject)?.get("songs") as? kotlinx.serialization.json.JsonArray
-        if (rawSongs != null && rawSongs.size == chunk.songs.size) {
-            for ((i, song) in chunk.songs.withIndex()) {
-                val rawSong = rawSongs[i] as? JsonObject ?: continue
-                song.extras = rawSong.filterKeys { it !in ENTERPRISE_MATCH_KNOWN_KEYS }
+        for ((i, song) in chunk.songs.withIndex()) {
+            val anchored = if (base != null) {
+                song.copy(
+                    startSeconds = base + (song.startOffset ?: 0.0) / 1000.0,
+                    endSeconds = base + (song.endOffset ?: 0.0) / 1000.0,
+                )
+            } else {
+                song
             }
+            // Re-walk the raw `songs` array to populate per-match extras.
+            if (rawSongs != null && rawSongs.size == chunk.songs.size) {
+                val rawSong = rawSongs[i] as? JsonObject
+                if (rawSong != null) {
+                    anchored.extras = rawSong.filterKeys { it !in ENTERPRISE_MATCH_KNOWN_KEYS }
+                }
+            }
+            out.add(anchored)
         }
-        out.addAll(chunk.songs)
     }
     return out
 }

@@ -108,7 +108,9 @@ println(result?.previewUrl())              // first preview across requested pro
 
 Valid `returnMetadata` values: `apple_music`, `spotify`, `deezer`, `napster`, `musicbrainz`. The corresponding properties (`appleMusic`, `spotify`, `deezer`, `napster`, `musicbrainz`) are `null` when not requested.
 
-`EnterpriseMatch` (returned by `recognizeEnterprise`) carries the same core tags plus `score`, `startOffset`, `endOffset`, `isrc`, `upc`. Access to `isrc`, `upc`, and `score` requires a Startup plan or higher — [contact us](mailto:api@audd.io) for enterprise features.
+`EnterpriseMatch` (returned by `recognizeEnterprise`) carries the same core tags plus `score`, `isrc`, `upc`. Access to `isrc`, `upc`, and `score` requires a Startup plan or higher — [contact us](mailto:api@audd.io) for enterprise features.
+
+`startSeconds` and `endSeconds` give where the song plays in the uploaded file, in seconds, measured from the start of the file. They are precise because `recognizeEnterprise` requests accurate offsets by default (pass `accurateOffsets = false` to opt out). Behind them, `startOffset` and `endOffset` are the raw fragment-relative offsets in milliseconds; `startSeconds` / `endSeconds` add the matching fragment's position in the file, so they are the values to read.
 
 For exhaustive `when` on the two match flavours (public-catalog vs. your custom catalog), project to the sealed `RecognitionMatch`:
 

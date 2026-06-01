@@ -368,5 +368,7 @@ internal fun buildEnterpriseFields(
     if (limit != null) put("limit", limit.toString())
     if (skipFirstSeconds != null) put("skip_first_seconds", skipFirstSeconds.toString())
     if (useTimecode != null) put("use_timecode", if (useTimecode) "true" else "false")
-    if (accurateOffsets != null) put("accurate_offsets", if (accurateOffsets) "true" else "false")
+    // Accurate offsets are on by default so startSeconds/endSeconds are precise;
+    // a caller passing accurateOffsets=false opts out.
+    put("accurate_offsets", if (accurateOffsets == false) "false" else "true")
 }

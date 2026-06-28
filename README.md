@@ -1,5 +1,6 @@
 # audd-kotlin
 
+[![Powered by AudD](https://img.shields.io/badge/Music_Recognition-AudD_API-2a4eef)](https://audd.io)
 [![CI](https://github.com/AudDMusic/audd-kotlin/actions/workflows/ci.yml/badge.svg)](https://github.com/AudDMusic/audd-kotlin/actions/workflows/ci.yml)
 [![Contract](https://github.com/AudDMusic/audd-kotlin/actions/workflows/contract.yml/badge.svg)](https://github.com/AudDMusic/audd-kotlin/actions/workflows/contract.yml)
 [![Maven Central](https://img.shields.io/maven-central/v/io.audd/audd-kotlin.svg)](https://central.sonatype.com/artifact/io.audd/audd-kotlin)

@@ -222,4 +222,158 @@ class MissingFieldToleranceTest {
         assertEquals("Kept", song.artist)
         assertEquals("Song", song.title)
     }
+
+    // ---- wrong-typed scalar COERCION (through all four decode paths) ----
+    //
+    // A scalar field arriving with a convertible wrong JSON type is coerced to
+    // the declared type: number↔string render, numeric-string→number,
+    // float→int truncation, number→bool (!=0), and the strict bool-string
+    // whitelist. Unconvertible input degrades to null — never a garbage 0.
+
+    // Path 1: recognize (RecognitionResult).
+    @Test
+    fun `recognize coerces numeric-string audio_id and object artist`() {
+        // audio_id is Long — a numeric string coerces; artist is String — a
+        // bare number renders to its string form.
+        val body = """
+            {"status":"success","result":{"audio_id":"12345","artist":123,"title":"T"}}
+        """.trimIndent()
+
+        val result = decodeRecognize(200, body, null, noOpDeprecation)
+        assertNotNull(result)
+        assertEquals(12345L, result!!.audioId, "numeric-string audio_id coerces to Long")
+        assertEquals("123", result.artist, "number artist renders to String")
+        assertEquals("T", result.title)
+    }
+
+    @Test
+    fun `recognize degrades non-numeric-string audio_id to null not zero`() {
+        val body = """
+            {"status":"success","result":{"audio_id":"abc","artist":"A"}}
+        """.trimIndent()
+
+        val result = decodeRecognize(200, body, null, noOpDeprecation)
+        assertNotNull(result)
+        assertNull(result!!.audioId, "non-numeric audio_id degrades to null, never garbage 0")
+        assertEquals("A", result.artist)
+    }
+
+    // Path 2: enterprise (EnterpriseMatch) — Int score, Double offsets.
+    @Test
+    fun `enterprise coerces string and float score and object artist`() {
+        val body = """
+            {"status":"success","result":[
+              {"offset":"0:00","songs":[
+                {"score":"85","artist":123,"title":"A"},
+                {"score":85.7,"title":"B"},
+                {"score":"abc","title":"C"},
+                {"score":{},"title":"D","artist":{}}
+              ]}
+            ]}
+        """.trimIndent()
+
+        val matches = decodeEnterprise(200, body, null, noOpDeprecation)
+        assertEquals(4, matches.size)
+        assertEquals(85, matches[0].score, "numeric-string score coerces to Int")
+        assertEquals("123", matches[0].artist, "number artist renders to String")
+        assertEquals(85, matches[1].score, "float score truncates to Int")
+        assertNull(matches[2].score, "non-numeric-string score degrades to null")
+        assertEquals("C", matches[2].title)
+        assertNull(matches[3].score, "object score degrades to null")
+        assertNull(matches[3].artist, "object artist degrades to null")
+    }
+
+    @Test
+    fun `enterprise coerces numeric-string offsets to Double`() {
+        val body = """
+            {"status":"success","result":[
+              {"offset":"10","songs":[
+                {"title":"T","start_offset":"1500.0","end_offset":"3000"}
+              ]}
+            ]}
+        """.trimIndent()
+
+        val matches = decodeEnterprise(200, body, null, noOpDeprecation)
+        assertEquals(1, matches.size)
+        assertEquals(1500.0, matches[0].startOffset, "numeric-string start_offset coerces to Double")
+        assertEquals(3000.0, matches[0].endOffset, "numeric-string end_offset coerces to Double")
+    }
+
+    // Path 3: stream callback song (StreamCallbackSong) — Int score.
+    @Test
+    fun `stream callback song coerces float score and object title`() {
+        val body = """
+            {"status":"success","result":{"radio_id":7,"results":[
+              {"artist":"Kept","title":"Song","score":92.9}
+            ]}}
+        """.trimIndent()
+
+        val parsed = parseCallback(body)
+        assertTrue(parsed is CallbackEvent.Match)
+        val song = (parsed as CallbackEvent.Match).match.song
+        assertNotNull(song)
+        assertEquals(92, song!!.score, "float score truncates to Int")
+        assertEquals("Kept", song.artist)
+    }
+
+    // Path 4: notification (StreamCallbackNotification) — Int code, Bool running.
+    @Test
+    fun `notification coerces numeric-string code and string stream_running`() {
+        val body = """
+            {
+              "status":"success",
+              "time":1587939136,
+              "notification":{
+                "radio_id":7,
+                "stream_running":"no",
+                "notification_code":"42",
+                "notification_message":"m"
+              }
+            }
+        """.trimIndent()
+
+        val parsed = parseCallback(body)
+        assertTrue(parsed is CallbackEvent.Notification)
+        val n = (parsed as CallbackEvent.Notification).notification
+        assertEquals(42, n.notificationCode, "numeric-string notification_code coerces to Int")
+        assertEquals(false, n.streamRunning, "\"no\" coerces to false")
+        assertEquals("m", n.notificationMessage)
+    }
+
+    @Test
+    fun `notification coerces number stream_running by non-zero`() {
+        val body = """
+            {"status":"success","notification":{"radio_id":7,"stream_running":1}}
+        """.trimIndent()
+
+        val parsed = parseCallback(body)
+        assertTrue(parsed is CallbackEvent.Notification)
+        val n = (parsed as CallbackEvent.Notification).notification
+        assertEquals(true, n.streamRunning, "1 coerces to true (!= 0)")
+    }
+
+    // Bool string whitelist — both directions, plus null for unrecognized.
+    @Test
+    fun `bool string whitelist coerces both directions and nulls unknowns`() {
+        fun running(v: String): Boolean? {
+            val body =
+                """{"status":"success","notification":{"radio_id":7,"stream_running":$v}}"""
+            val parsed = parseCallback(body)
+            assertTrue(parsed is CallbackEvent.Notification)
+            return (parsed as CallbackEvent.Notification).notification.streamRunning
+        }
+
+        // truthy
+        for (t in listOf("\"yes\"", "\"on\"", "\"TRUE\"", "\" 1 \"", "\"true\"")) {
+            assertEquals(true, running(t), "$t should coerce to true")
+        }
+        // falsey
+        for (f in listOf("\"no\"", "\"off\"", "\"False\"", "\"0\"", "\"\"", "0")) {
+            assertEquals(false, running(f), "$f should coerce to false")
+        }
+        // unrecognized → null
+        for (u in listOf("\"maybe\"", "\"weird\"", "{}")) {
+            assertNull(running(u), "$u should degrade to null")
+        }
+    }
 }

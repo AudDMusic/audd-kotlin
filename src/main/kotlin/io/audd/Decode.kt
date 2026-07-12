@@ -2,8 +2,12 @@ package io.audd
 
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
@@ -146,21 +150,151 @@ internal fun <T> decodeObjectLeniently(
     // Fast path: nothing wrong-typed.
     runCatching { auddJson.decodeFromJsonElement(serializer, obj) }
         .onSuccess { return it }
-    // Slow path: keep only keys that decode cleanly on their own, then decode
-    // the survivors. A key that fails in isolation is a genuine type mismatch
-    // for its target field (unknown keys are ignored, so they never fail here).
-    val kept = obj.filter { (key, value) ->
-        runCatching {
+    // Slow path: a key that fails to decode in isolation is a genuine type
+    // mismatch for its target field (unknown keys are ignored, so they never
+    // fail here). For each such key we COERCE the wire value toward the field's
+    // declared scalar type when convertible — number↔string, float→int
+    // truncation, numeric-string→number, the bool table — and only fall back to
+    // JsonNull (dropping the field to its default) when no conversion applies.
+    val descriptor = serializer.descriptor
+    val rewritten = obj.mapValues { (key, value) ->
+        val isolatedOk = runCatching {
             auddJson.decodeFromJsonElement(serializer, JsonObject(mapOf(key to value)))
         }.isSuccess
+        if (isolatedOk) value else coerceForField(descriptor, key, value)
     }
-    val pruned = JsonObject(kept)
-    // The survivors decode together (each was individually valid, and the
-    // model's fields are independent). If some pathological interaction still
-    // fails, fall back to the empty object so every field takes its default.
+    val pruned = JsonObject(rewritten)
+    // The survivors decode together (each was individually valid or coerced,
+    // and the model's fields are independent). If some pathological interaction
+    // still fails, fall back to the empty object so every field takes its
+    // default.
     return runCatching { auddJson.decodeFromJsonElement(serializer, pruned) }
         .getOrElse { auddJson.decodeFromJsonElement(serializer, JsonObject(emptyMap())) }
 }
+
+/**
+ * Coerce a wrong-typed wire [value] toward the scalar type declared for [key]
+ * in [descriptor], per the family coercion policy. Returns the coerced element
+ * when convertible, else [JsonNull] so the field degrades to its default.
+ *
+ * Only JSON primitives are coerced; objects and arrays for a scalar field —
+ * and any field whose declared kind isn't a supported scalar — become null.
+ */
+private fun coerceForField(
+    descriptor: SerialDescriptor,
+    key: String,
+    value: JsonElement,
+): JsonElement {
+    val prim = value as? JsonPrimitive ?: return JsonNull
+    val index = descriptor.getElementIndex(key)
+    if (index == CompositeIndexNotFound) return JsonNull
+    // Unwrap nullable/wrapped element descriptors to reach the primitive kind.
+    val kind = descriptor.getElementDescriptor(index).kind
+    return when (kind) {
+        PrimitiveKind.STRING -> coerceToString(prim)
+        PrimitiveKind.INT, PrimitiveKind.LONG, PrimitiveKind.SHORT, PrimitiveKind.BYTE ->
+            coerceToIntegral(prim)
+        PrimitiveKind.FLOAT, PrimitiveKind.DOUBLE -> coerceToFloating(prim)
+        PrimitiveKind.BOOLEAN -> coerceToBoolean(prim)
+        else -> JsonNull
+    }
+}
+
+private const val CompositeIndexNotFound = -3
+
+/** expect STRING: number/bool → rendered string; anything non-primitive → null. */
+private fun coerceToString(prim: JsonPrimitive): JsonElement {
+    // A quoted primitive (isString) is already a string and would have decoded
+    // on the fast path; a bare literal reaches here. Render its content.
+    val content = prim.contentOrNull ?: return JsonNull
+    return JsonPrimitive(content)
+}
+
+/**
+ * expect INT/LONG: float/double → truncate; numeric string → parse; bool →
+ * 0/1; non-numeric string / anything else → null (never a garbage 0).
+ *
+ * Numeric-string parsing is full-string strict after trimming: `"85abc"`,
+ * `"NaN"`, `"Infinity"` → null.
+ */
+private fun coerceToIntegral(prim: JsonPrimitive): JsonElement {
+    if (prim.booleanOrNullLenient != null) {
+        return JsonPrimitive(if (prim.booleanOrNullLenient == true) 1 else 0)
+    }
+    val content = prim.contentOrNull?.trim() ?: return JsonNull
+    if (content.isEmpty()) return JsonNull
+    content.toLongOrNull()?.let { return JsonPrimitive(it) }
+    // float/double literal or numeric string with a fraction → truncate.
+    // Reject non-finite (NaN / Infinity) — never a garbage value.
+    strictFiniteDoubleOrNull(content)?.let { return JsonPrimitive(it.toLong()) }
+    return JsonNull
+}
+
+/**
+ * expect FLOAT/DOUBLE: int → convert; numeric string → parse; else null.
+ *
+ * Full-string strict after trimming; `NaN` / `Infinity` / trailing garbage
+ * → null.
+ */
+private fun coerceToFloating(prim: JsonPrimitive): JsonElement {
+    if (prim.booleanOrNullLenient != null) return JsonNull
+    val content = prim.contentOrNull?.trim() ?: return JsonNull
+    if (content.isEmpty()) return JsonNull
+    strictFiniteDoubleOrNull(content)?.let { return JsonPrimitive(it) }
+    return JsonNull
+}
+
+/**
+ * expect BOOL: number → (value != 0); string → a strict case-insensitive,
+ * trimmed whitelist both ways:
+ * - `"true"` / `"1"` / `"yes"` / `"on"` → true
+ * - `"false"` / `"0"` / `"no"` / `"off"` / `""` → false
+ * - any other string → null (never a guessed default).
+ */
+private fun coerceToBoolean(prim: JsonPrimitive): JsonElement {
+    val content = prim.contentOrNull ?: return JsonNull
+    // A bare numeric literal.
+    if (!prim.isString) {
+        strictFiniteDoubleOrNull(content)?.let { return JsonPrimitive(it != 0.0) }
+        // A bare non-numeric literal that isn't a bool (bools decode on the
+        // fast path) — nothing sensible to coerce.
+        return JsonNull
+    }
+    return when (content.trim().lowercase()) {
+        "true", "1", "yes", "on" -> JsonPrimitive(true)
+        "false", "0", "no", "off", "" -> JsonPrimitive(false)
+        else -> JsonNull
+    }
+}
+
+/**
+ * Parse [text] as a finite double, or null. `String.toDoubleOrNull` accepts
+ * `"NaN"` / `"Infinity"` / hex-float / trailing `d`/`f` forms — the family
+ * policy rejects all non-finite and non-decimal input, so filter explicitly.
+ */
+private fun strictFiniteDoubleOrNull(text: String): Double? {
+    val d = text.toDoubleOrNull() ?: return null
+    if (!d.isFinite()) return null
+    // Reject the letter-bearing forms toDoubleOrNull tolerates (hex floats,
+    // trailing d/f type suffixes) — only plain decimal/scientific numerals pass.
+    if (text.any { it.isLetter() && it != 'e' && it != 'E' }) return null
+    return d
+}
+
+/**
+ * Lenient boolean read of a bare literal: `true`/`false` (case-insensitive)
+ * only. Quoted strings and everything else → null. Used to detect a JSON
+ * boolean before falling back to string/number coercion.
+ */
+private val JsonPrimitive.booleanOrNullLenient: Boolean?
+    get() {
+        if (isString) return null
+        return when (contentOrNull?.lowercase()) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+    }
 
 /** Parse a recognize() response — null = no match. */
 internal fun decodeRecognize(

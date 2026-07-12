@@ -12,7 +12,7 @@ The API itself is so simple that it can easily be used even without an SDK: [doc
 ## Quickstart
 
 ```kotlin
-implementation("io.audd:audd-kotlin:1.5.15")
+implementation("io.audd:audd-kotlin:1.5.16")
 ```
 
 Get your API token at [dashboard.audd.io](https://dashboard.audd.io).

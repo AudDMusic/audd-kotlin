@@ -128,7 +128,13 @@ public class Streams internal constructor(
         val result = postFormReturningResult("getStreams", emptyMap(), readPolicy)
             ?: return emptyList()
         if (result !is JsonArray) return emptyList()
-        return result.map { auddJson.decodeFromJsonElement(Stream.serializer(), it) }
+        // Decode each stream element on its own: drop a non-object / broken
+        // element rather than aborting the whole list, and degrade any
+        // wrong-typed field within an element to null.
+        return result.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            runCatching { decodeObjectLeniently(Stream.serializer(), obj) }.getOrNull()
+        }
     }
 
     /**

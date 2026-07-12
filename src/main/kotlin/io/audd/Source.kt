@@ -1,5 +1,7 @@
 package io.audd
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
 
@@ -59,7 +61,7 @@ internal data class FilePart(
  * The returned lambda yields a fresh [RequestPart] on each call, so retried
  * uploads aren't reading from an exhausted buffer/handle.
  */
-internal fun prepareSource(source: Source): () -> RequestPart {
+internal fun prepareSource(source: Source): suspend () -> RequestPart {
     return when (source) {
         is Source.Url -> {
             val url = source.url
@@ -72,7 +74,9 @@ internal fun prepareSource(source: Source): () -> RequestPart {
             val file = source.file
             require(file.exists()) { "File does not exist: ${file.path}" }
             ;{
-                val bytes = file.readBytes()
+                // Reading the file is blocking I/O — keep it off the caller's
+                // dispatcher so a recognize() call never stalls an event loop.
+                val bytes = withContext(Dispatchers.IO) { file.readBytes() }
                 RequestPart(emptyMap(), FilePart(file.name, bytes))
             }
         }
@@ -88,7 +92,9 @@ internal fun prepareSource(source: Source): () -> RequestPart {
             var buffered: ByteArray? = null
             ;{
                 if (buffered == null) {
-                    buffered = stream.readBytes()
+                    // Draining the stream is blocking I/O — run it on the IO
+                    // dispatcher rather than the caller's coroutine.
+                    buffered = withContext(Dispatchers.IO) { stream.readBytes() }
                 }
                 RequestPart(emptyMap(), FilePart(filename, buffered!!))
             }

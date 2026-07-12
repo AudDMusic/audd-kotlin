@@ -1,5 +1,6 @@
 package io.audd
 
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -125,6 +126,42 @@ internal fun offsetToSeconds(text: String?): Double? {
     return total
 }
 
+/**
+ * Decode [obj] into [T], degrading any wrong-typed field to its default
+ * (null) instead of throwing.
+ *
+ * The strict [kotlinx.serialization] decoder throws on a type mismatch — e.g.
+ * `score:""` for an `Int?` field, `artist:{}` for a `String?`, or
+ * `spotify:"str"` for a `Map`. A successful API response must never surface
+ * such a failure to the caller: the invariant is to drop the offending field,
+ * not the whole result. We first try the fast path (strict decode of the whole
+ * object); only on failure do we identify and prune the keys that don't fit,
+ * decoding the survivors. Undecodable-in-isolation keys are removed so the
+ * field falls back to its declared default.
+ */
+internal fun <T> decodeObjectLeniently(
+    serializer: DeserializationStrategy<T>,
+    obj: JsonObject,
+): T {
+    // Fast path: nothing wrong-typed.
+    runCatching { auddJson.decodeFromJsonElement(serializer, obj) }
+        .onSuccess { return it }
+    // Slow path: keep only keys that decode cleanly on their own, then decode
+    // the survivors. A key that fails in isolation is a genuine type mismatch
+    // for its target field (unknown keys are ignored, so they never fail here).
+    val kept = obj.filter { (key, value) ->
+        runCatching {
+            auddJson.decodeFromJsonElement(serializer, JsonObject(mapOf(key to value)))
+        }.isSuccess
+    }
+    val pruned = JsonObject(kept)
+    // The survivors decode together (each was individually valid, and the
+    // model's fields are independent). If some pathological interaction still
+    // fails, fall back to the empty object so every field takes its default.
+    return runCatching { auddJson.decodeFromJsonElement(serializer, pruned) }
+        .getOrElse { auddJson.decodeFromJsonElement(serializer, JsonObject(emptyMap())) }
+}
+
 /** Parse a recognize() response — null = no match. */
 internal fun decodeRecognize(
     httpStatus: Int,
@@ -136,15 +173,9 @@ internal fun decodeRecognize(
     val result = body["result"] ?: return null
     if (result is kotlinx.serialization.json.JsonNull) return null
     if (result !is JsonObject) return null
-    val parsed = runCatching {
-        auddJson.decodeFromJsonElement(RecognitionResult.serializer(), result)
-    }.getOrElse { exc ->
-        throw AudDSerializationException(
-            "Failed to parse recognize result: ${exc.message}",
-            rawText = rawBody,
-            cause = exc,
-        )
-    }
+    // Degrade any wrong-typed field to null rather than throwing on a
+    // successful response.
+    val parsed = decodeObjectLeniently(RecognitionResult.serializer(), result)
     parsed.extras = result.filterKeys { it !in RECOGNITION_RESULT_KNOWN_KEYS }
     return parsed
 }
@@ -161,22 +192,22 @@ internal fun decodeEnterprise(
     if (resultEl !is kotlinx.serialization.json.JsonArray) return emptyList()
     val out = mutableListOf<EnterpriseMatch>()
     for (chunkEl in resultEl) {
-        val chunk = runCatching {
-            auddJson.decodeFromJsonElement(EnterpriseChunkResult.serializer(), chunkEl)
-        }.getOrElse { exc ->
-            throw AudDSerializationException(
-                "Failed to parse enterprise chunk: ${exc.message}",
-                rawText = rawBody,
-                cause = exc,
-            )
-        }
+        // Skip a chunk that isn't even an object — a broken element must not
+        // abort the whole response.
+        val chunkObj = chunkEl as? JsonObject ?: continue
         // The chunk `offset` anchors this fragment's position in the user's
         // file. Add it to each song's fragment-relative start/end (ms → s) so
         // callers get absolute file positions in [EnterpriseMatch.startSeconds]
         // / [EnterpriseMatch.endSeconds]. null offset → leave both null.
-        val base = offsetToSeconds(chunk.offset)
-        val rawSongs = (chunkEl as? JsonObject)?.get("songs") as? kotlinx.serialization.json.JsonArray
-        for ((i, song) in chunk.songs.withIndex()) {
+        val base = offsetToSeconds(chunkObj["offset"])
+        val rawSongs = chunkObj["songs"] as? kotlinx.serialization.json.JsonArray ?: continue
+        for (songEl in rawSongs) {
+            // Decode each song independently: drop non-object / undecodable
+            // elements, degrade any wrong-typed field within a song to null.
+            val rawSong = songEl as? JsonObject ?: continue
+            val song = runCatching {
+                decodeObjectLeniently(EnterpriseMatch.serializer(), rawSong)
+            }.getOrNull() ?: continue
             val anchored = if (base != null) {
                 song.copy(
                     startSeconds = base + (song.startOffset ?: 0.0) / 1000.0,
@@ -185,13 +216,7 @@ internal fun decodeEnterprise(
             } else {
                 song
             }
-            // Re-walk the raw `songs` array to populate per-match extras.
-            if (rawSongs != null && rawSongs.size == chunk.songs.size) {
-                val rawSong = rawSongs[i] as? JsonObject
-                if (rawSong != null) {
-                    anchored.extras = rawSong.filterKeys { it !in ENTERPRISE_MATCH_KNOWN_KEYS }
-                }
-            }
+            anchored.extras = rawSong.filterKeys { it !in ENTERPRISE_MATCH_KNOWN_KEYS }
             out.add(anchored)
         }
     }

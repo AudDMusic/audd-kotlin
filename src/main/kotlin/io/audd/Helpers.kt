@@ -36,15 +36,9 @@ public fun deriveLongpollCategory(apiToken: String, radioId: Long): String {
 public fun parseCallback(body: JsonObject): CallbackEvent {
     val notif = body["notification"]
     if (notif is JsonObject) {
-        val parsed = try {
-            auddJson.decodeFromJsonElement(StreamCallbackNotification.serializer(), notif)
-        } catch (e: SerializationException) {
-            throw AudDSerializationException(
-                "callback notification: ${e.message}",
-                rawText = body.toString(),
-                cause = e,
-            )
-        }
+        // A successful notification callback must never throw on a wrong-typed
+        // field — degrade the offending field to null.
+        val parsed = decodeObjectLeniently(StreamCallbackNotification.serializer(), notif)
         // The outer `time` field lives on the envelope, not the notification block.
         val outerTime = body["time"]?.jsonPrimitive?.intOrNull
         val final = if (outerTime != null && parsed.time == null) parsed.copy(time = outerTime) else parsed
@@ -102,14 +96,13 @@ private fun parseMatch(resultEl: JsonObject, fullBody: JsonObject): StreamCallba
     val playLength = resultEl["play_length"]?.jsonPrimitive?.intOrNull
     val resultsEl: List<kotlinx.serialization.json.JsonElement> =
         resultEl["results"] as? kotlinx.serialization.json.JsonArray ?: emptyList()
-    // Decode each candidate; skip malformed (non-object / undecodable) entries.
+    // Decode each candidate; skip non-object entries, and degrade any
+    // wrong-typed field within a song to null rather than dropping the song.
     val songs = resultsEl.mapNotNull { el ->
         val obj = el as? JsonObject ?: return@mapNotNull null
-        val parsed = try {
-            auddJson.decodeFromJsonElement(StreamCallbackSong.serializer(), obj)
-        } catch (_: SerializationException) {
-            return@mapNotNull null
-        }
+        val parsed = runCatching {
+            decodeObjectLeniently(StreamCallbackSong.serializer(), obj)
+        }.getOrNull() ?: return@mapNotNull null
         parsed.extras = obj.filterKeys { it !in STREAM_CALLBACK_SONG_KNOWN_KEYS }
         parsed
     }

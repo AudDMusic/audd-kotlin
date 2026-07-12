@@ -25,7 +25,13 @@ public class Advanced internal constructor(
             raiseFromErrorResponse(body, httpStatus = 200, requestId = null)
         }
         val result = body["result"] as? JsonArray ?: return emptyList()
-        return result.map { auddJson.decodeFromJsonElement(LyricsResult.serializer(), it) }
+        // Decode each lyrics entry independently: drop a non-object / broken
+        // element rather than aborting the whole list, and degrade any
+        // wrong-typed field within an entry to null.
+        return result.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            runCatching { decodeObjectLeniently(LyricsResult.serializer(), obj) }.getOrNull()
+        }
     }
 
     /**

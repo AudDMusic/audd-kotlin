@@ -209,11 +209,6 @@ public class AudDSerializationException(
     cause: Throwable? = null,
 ) : AudDException(message, cause)
 
-/**
- * Map an AudD server error code to its sealed exception type. Unknown → [AudDServerException].
- */
-internal fun errorClassFor(code: Int): Int = code // returns code; class chosen in factory below
-
 internal fun raiseFromErrorResponse(
     body: JsonObject,
     httpStatus: Int,

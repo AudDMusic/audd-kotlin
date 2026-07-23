@@ -107,7 +107,7 @@ println(result?.spotify?.get("uri"))       // spotify:track:...
 println(result?.previewUrl())              // first preview across requested providers, or null
 ```
 
-Valid `returnMetadata` values: `apple_music`, `spotify`, `deezer`, `napster`, `musicbrainz`. The corresponding properties (`appleMusic`, `spotify`, `deezer`, `napster`, `musicbrainz`) are `null` when not requested.
+Valid `returnMetadata` values: `apple_music`, `spotify`, `deezer`, `musicbrainz`. The corresponding properties (`appleMusic`, `spotify`, `deezer`, `musicbrainz`) are `null` when not requested.
 
 `EnterpriseMatch` (returned by `recognizeEnterprise`) carries the same core tags plus `score`, `isrc`, `upc`. Access to `isrc`, `upc`, and `score` requires a Startup plan or higher — [contact us](mailto:api@audd.io) for enterprise features.
 

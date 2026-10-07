@@ -110,7 +110,8 @@ public class AudD(
     }
 
     /**
-     * Recognize a song from a URL, file, byte buffer, or stream.
+     * Recognize a song from a URL, file, byte buffer, or stream. The first 12
+     * seconds of audio are analyzed; use [recognizeEnterprise] to scan beyond them.
      *
      * Returns null when the recognition succeeded but no song matched.
      *
@@ -182,8 +183,9 @@ public class AudD(
     ): RecognitionResult? = recognize(Source.Url(url), returnMetadata, market, extraParameters)
 
     /**
-     * Enterprise recognition — for files longer than 25 seconds; returns a flat
-     * list of [EnterpriseMatch]es spanning every chunk in the upload.
+     * Enterprise recognition — scans the whole file rather than only the first
+     * 12 seconds; returns a flat list of [EnterpriseMatch]es spanning every
+     * chunk in the upload.
      */
     public suspend fun recognizeEnterprise(
         source: Source,

@@ -5,8 +5,8 @@ package io.audd
  * so AudD's recognition can identify your own audio for your account only.
  *
  * **This is NOT how you submit audio for music recognition.** For recognition,
- * call [AudD.recognize] (or [AudD.recognizeEnterprise] for files longer than 25
- * seconds). Custom-catalog upload requires special access — contact api@audd.io.
+ * call [AudD.recognize] (or [AudD.recognizeEnterprise] to scan beyond the first
+ * 12 seconds of a file). Custom-catalog upload requires special access — contact api@audd.io.
  */
 public class CustomCatalog internal constructor(
     private val http: AudDHttp,

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -65,6 +66,22 @@ class ContractTest {
         assertNotNull(match.isrc)
         assertNotNull(match.upc)
         assertTrue((match.score ?: -1) >= 0)
+        assertNull(match.audioId)
+        assertTrue(match.isPublicMatch)
+        assertFalse(match.isCustomMatch)
+    }
+
+    @Test
+    fun `enterprise_custom_match carries audio_id`() {
+        val fixture = loadFixture("enterprise_custom_match.json")
+        val firstChunk = (fixture["result"] as JsonArray)[0].jsonObject
+        val firstSong = (firstChunk["songs"] as JsonArray)[0].jsonObject
+        val match = json.decodeFromJsonElement(EnterpriseMatch.serializer(), firstSong)
+        assertEquals(146L, match.audioId)
+        assertEquals(100, match.score)
+        assertTrue(match.isCustomMatch)
+        assertFalse(match.isPublicMatch)
+        assertNull(match.artist)
     }
 
     @Test

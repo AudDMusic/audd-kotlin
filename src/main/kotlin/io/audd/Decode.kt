@@ -97,7 +97,7 @@ private val RECOGNITION_RESULT_KNOWN_KEYS: Set<String> = setOf(
 )
 
 private val ENTERPRISE_MATCH_KNOWN_KEYS: Set<String> = setOf(
-    "score", "timecode", "artist", "title", "album", "release_date", "label",
+    "score", "timecode", "audio_id", "artist", "title", "album", "release_date", "label",
     "isrc", "upc", "song_link", "start_offset", "end_offset",
 )
 

@@ -204,10 +204,19 @@ public sealed interface RecognitionMatch {
     public data class Custom(override val value: RecognitionResult) : RecognitionMatch
 }
 
+/**
+ * A single match from the enterprise endpoint.
+ *
+ * - When [audioId] is non-null this is a custom-catalog match (your own
+ *   fingerprinted audio).
+ * - When [audioId] is null and [artist] / [title] are present this is a
+ *   public-catalog match.
+ */
 @Serializable
 public data class EnterpriseMatch(
     val score: Int? = null,
     val timecode: String? = null,
+    @SerialName("audio_id") val audioId: Long? = null,
     val artist: String? = null,
     val title: String? = null,
     val album: String? = null,
@@ -232,6 +241,9 @@ public data class EnterpriseMatch(
      */
     public var extras: Map<String, JsonElement> = emptyMap()
         internal set
+
+    public val isCustomMatch: Boolean get() = audioId != null
+    public val isPublicMatch: Boolean get() = audioId == null && (artist != null || title != null)
 
     /** Cover-art URL for `lis.tn`-hosted song_links, else `null`. */
     public val thumbnailUrl: String?

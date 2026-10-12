@@ -284,6 +284,26 @@ class MissingFieldToleranceTest {
     }
 
     @Test
+    fun `enterprise coerces numeric-string audio_id and degrades garbage to null`() {
+        val body = """
+            {"status":"success","result":[
+              {"offset":"00:24","songs":[
+                {"score":100,"timecode":"01:45","audio_id":"146"},
+                {"score":90,"title":"T","audio_id":"abc"}
+              ]}
+            ]}
+        """.trimIndent()
+
+        val matches = decodeEnterprise(200, body, null, noOpDeprecation)
+        assertEquals(2, matches.size)
+        assertEquals(146L, matches[0].audioId, "numeric-string audio_id coerces to Long")
+        assertTrue(matches[0].isCustomMatch)
+        assertNull(matches[1].audioId, "non-numeric audio_id degrades to null, never garbage 0")
+        assertTrue(matches[1].isPublicMatch)
+        assertTrue(matches[1].extras.isEmpty(), "audio_id is a typed field, not an extra")
+    }
+
+    @Test
     fun `enterprise coerces numeric-string offsets to Double`() {
         val body = """
             {"status":"success","result":[

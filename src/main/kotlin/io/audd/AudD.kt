@@ -212,7 +212,7 @@ public class AudD(
             formatReturn(returnMetadata), skip, every, limit, skipFirstSeconds, useTimecode, accurateOffsets,
         )
         val url = "$ENTERPRISE_BASE/"
-        emitEvent(AudDEvent(AudDEvent.Kind.REQUEST, "recognize", url))
+        emitEvent(AudDEvent(AudDEvent.Kind.REQUEST, "recognizeEnterprise", url))
         val started = System.nanoTime()
         val resp = try {
             retry(recognitionPolicy, shouldRetryByResponse = { shouldRetryResponse(it.httpStatus, RetryClass.RECOGNITION) }) {
@@ -227,7 +227,7 @@ public class AudD(
             emitEvent(
                 AudDEvent(
                     kind = AudDEvent.Kind.EXCEPTION,
-                    method = "recognize",
+                    method = "recognizeEnterprise",
                     url = url,
                     elapsedMs = elapsedMillis(started),
                     extras = mapOf("error_type" to (exc::class.simpleName ?: "Throwable")),
@@ -238,7 +238,7 @@ public class AudD(
         emitEvent(
             AudDEvent(
                 kind = AudDEvent.Kind.RESPONSE,
-                method = "recognize",
+                method = "recognizeEnterprise",
                 url = url,
                 requestId = resp.requestId,
                 httpStatus = resp.httpStatus,
@@ -309,7 +309,7 @@ public class AudD(
  * bytes — observability must not become an exfiltration vector.
  *
  * @property kind which lifecycle phase produced this event.
- * @property method AudD method name (e.g. `"recognize"`, `"addStream"`).
+ * @property method The call the event belongs to: `"recognize"` or `"recognizeEnterprise"`.
  * @property url full request URL.
  * @property requestId server-assigned request id (from the `x-request-id`
  *   header), present on RESPONSE.

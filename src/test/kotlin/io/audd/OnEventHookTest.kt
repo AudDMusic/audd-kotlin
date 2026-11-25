@@ -81,4 +81,21 @@ class OnEventHookTest {
             client.recognize(Source.Url("https://audd.tech/example.mp3"))
         }
     }
+
+    @Test
+    fun `onEvent names enterprise calls recognizeEnterprise`() = runBlocking {
+        val events = mutableListOf<AudDEvent>()
+        val mock = MockEngine {
+            respond(
+                content = ByteReadChannel("""{"status":"success","result":[]}"""),
+                status = HttpStatusCode.OK,
+                headers = headersOf(),
+            )
+        }
+        AudD(apiToken = "test", engine = mock, onEvent = { events += it }).use { client ->
+            client.recognizeEnterprise(Source.Url("https://audd.tech/example.mp3"), limit = 1)
+        }
+        assertEquals(listOf(AudDEvent.Kind.REQUEST, AudDEvent.Kind.RESPONSE), events.map { it.kind })
+        assertEquals(listOf("recognizeEnterprise", "recognizeEnterprise"), events.map { it.method })
+    }
 }

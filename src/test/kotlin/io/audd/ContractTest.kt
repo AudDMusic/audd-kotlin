@@ -108,6 +108,31 @@ class ContractTest {
         assertEquals(1587939136, notif.time)
     }
 
+    private fun fixtureText(name: String): String = loadFixture(name).toString()
+
+    @Test
+    fun `longpoll_events delivers both songs in order and moves since_time to the last event`() {
+        val body = readLongpollBody(fixtureText("longpoll_events.json"), 200, null) as LongpollBody.Delivery
+        val matches = body.events.map { (it as CallbackEvent.Match).match }
+        assertEquals(listOf("Alan Walker, A\$AP Rocky", "Tears For Fears"), matches.map { it.song?.artist })
+        assertEquals(listOf(7L, 7L), matches.map { it.radioId })
+        assertEquals(1795547548112L, body.nextSince)
+    }
+
+    @Test
+    fun `longpoll_no_events delivers nothing and moves since_time to its timestamp`() {
+        val body = readLongpollBody(fixtureText("longpoll_no_events.json"), 200, null) as LongpollBody.Delivery
+        assertTrue(body.events.isEmpty())
+        assertEquals(1777901270049L, body.nextSince)
+    }
+
+    @Test
+    fun `longpoll_error is an invalid-request error carrying the server text`() {
+        val body = readLongpollBody(fixtureText("longpoll_error.json"), 200, null) as LongpollBody.Failed
+        val err = body.error as AudDInvalidRequestException
+        assertEquals("Invalid timeout arg.  Must be 1-120.", err.serverMessage)
+    }
+
     @Test
     fun `deriveLongpollCategory matches the audd-python reference vector`() {
         val cat = deriveLongpollCategory("0123456789abcdef0123456789abcdef", 1)

@@ -53,10 +53,9 @@ class OnEventHookTest {
         try {
             try {
                 client.recognize(Source.Url("https://audd.tech/example.mp3"))
-            } catch (_: Throwable) {
-                // After retries are exhausted, the underlying network exception
-                // (or its wrapped form) is rethrown — both paths must emit
-                // an EXCEPTION event.
+            } catch (_: AudDConnectionException) {
+                // After retries are exhausted the network failure surfaces as
+                // AudDConnectionException, and an EXCEPTION event is emitted.
             }
         } finally {
             client.close()
@@ -68,7 +67,7 @@ class OnEventHookTest {
     }
 
     @Test
-    fun `onEvent hook exception is swallowed and never breaks the request path`() = runBlocking {
+    fun `onEvent hook exception is swallowed and never breaks the request path`(): Unit = runBlocking {
         val mock = MockEngine {
             respond(
                 content = ByteReadChannel("""{"status":"success","result":null}"""),

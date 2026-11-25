@@ -22,21 +22,17 @@ public class CustomCatalog internal constructor(
      *
      * **NOT for music recognition.** See class docs.
      *
-     * **No automatic retries.** Custom-catalog upload is metered; an automatic
-     * retry on transport failure could double-charge for the same audio
-     * fingerprinting. Transient failures (5xx, connection errors) surface as a
-     * clean exception — the caller decides whether to retry. This is independent
-     * of `AudD(maxRetries = ...)`.
+     * **Never retried automatically.** The upload is sent once: a failure (5xx,
+     * connection error) surfaces as a clean exception, so check the error
+     * before sending it again (an upload to an `audioId` that already holds a
+     * song replaces it). This is independent of `AudD(maxRetries = ...)`.
      */
     public suspend fun add(audioId: Long, source: Source) {
         val reopen = prepareSource(source)
         val resp = retry(criticalPolicy, shouldRetryByResponse = { shouldRetryResponse(it.httpStatus, RetryClass.CRITICAL) }) {
             val part = reopen()
-            try {
+            transportAttempt(RetryClass.CRITICAL) {
                 http.postForm(uploadUrl, part.data + ("audio_id" to audioId.toString()), part.file)
-            } catch (exc: Throwable) {
-                if (shouldRetryException(exc, RetryClass.CRITICAL)) throw exc
-                throw AudDConnectionException(exc.message ?: exc.toString(), original = exc)
             }
         }
         decodeSuccess(resp.httpStatus, resp.body, resp.requestId, customCatalogContext = true)

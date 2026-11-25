@@ -376,7 +376,7 @@ public data class StreamCallbackNotification(
  *
  * ```kotlin
  * when (val parsed = parseCallback(bytes)) {
- *     is CallbackEvent.Match        -> println(parsed.match.song.artist)
+ *     is CallbackEvent.Match        -> println(parsed.match.song?.artist)
  *     is CallbackEvent.Notification -> println(parsed.notification.notificationMessage)
  * }
  * ```

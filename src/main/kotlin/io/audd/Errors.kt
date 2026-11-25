@@ -214,7 +214,15 @@ internal fun raiseFromErrorResponse(
     httpStatus: Int,
     requestId: String?,
     customCatalogContext: Boolean = false,
-): Nothing {
+): Nothing = throw errorFromResponse(body, httpStatus, requestId, customCatalogContext)
+
+/** Build the typed exception for a `status: error` body (see [raiseFromErrorResponse]). */
+internal fun errorFromResponse(
+    body: JsonObject,
+    httpStatus: Int,
+    requestId: String?,
+    customCatalogContext: Boolean = false,
+): AudDApiException {
     val err = body["error"]?.let { it as? JsonObject } ?: JsonObject(emptyMap())
     val code = err["error_code"]?.jsonPrimitive?.intOrNull ?: 0
     val message = err["error_message"]?.jsonPrimitive?.contentOrNull ?: ""
@@ -288,7 +296,7 @@ internal fun raiseFromErrorResponse(
             ctorArgs.requestedParams, ctorArgs.requestMethod, ctorArgs.brandedMessage, ctorArgs.rawResponse,
         )
     }
-    throw ex
+    return ex
 }
 
 internal data class ApiCtorArgs(

@@ -6,16 +6,16 @@ plugins {
 }
 
 group = "io.audd"
-version = "1.5.18"
+version = "1.5.19"
 description = "Official Kotlin SDK for the AudD music recognition API."
 
 repositories {
     mavenCentral()
 }
 
-val ktorVersion = "2.3.12"
-val coroutinesVersion = "1.8.1"
-val serializationVersion = "1.7.3"
+val ktorVersion = "3.3.3"
+val coroutinesVersion = "1.10.2"
+val serializationVersion = "1.9.0"
 val slf4jVersion = "2.0.13"
 val junitVersion = "5.10.2"
 
@@ -55,6 +55,17 @@ tasks.test {
     useJUnitPlatform()
     testLogging {
         events("passed", "skipped", "failed")
+    }
+}
+
+// `-PktorTestVersion=<version>` runs the tests against a different Ktor
+// release than the one the SDK is compiled against, the way an app that
+// depends on a newer Ktor 3 uses the published artifact.
+providers.gradleProperty("ktorTestVersion").orNull?.let { ktorTestVersion ->
+    configurations.named("testRuntimeClasspath") {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "io.ktor") useVersion(ktorTestVersion)
+        }
     }
 }
 

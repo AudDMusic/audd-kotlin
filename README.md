@@ -12,7 +12,7 @@ The API itself is so simple that it can easily be used even without an SDK: [doc
 ## Quickstart
 
 ```kotlin
-implementation("io.audd:audd-kotlin:1.5.18")
+implementation("io.audd:audd-kotlin:1.5.19")
 ```
 
 Get your API token at [dashboard.audd.io](https://dashboard.audd.io).
@@ -195,6 +195,8 @@ try {
 
 Every `AudDApiException` carries `errorCode`, `serverMessage`, `httpStatus`, `requestId`, `requestedParams`, `requestMethod`, `brandedMessage`, and `rawResponse` — enough to log a full incident or open a support ticket.
 
+A network failure that outlasts the retries arrives as `AudDConnectionException`, with the underlying exception in `original`. Coroutine cancellation, `withTimeout` included, is not an `AudDException`: it cancels the request in flight and propagates unchanged.
+
 ## Configuration
 
 ```kotlin
@@ -203,13 +205,13 @@ import io.audd.AudDEvent
 
 val audd = AudD(
     apiToken = "your-token",
-    maxRetries = 3,                 // per-call retry budget
+    maxRetries = 3,                 // attempts per call, the first one included
     backoffFactor = 0.5,            // initial backoff seconds (jittered)
     onEvent = { e: AudDEvent -> println(e) },
 )
 ```
 
-**Timeouts.** Default Ktor timeouts are 30s connect / 60s read for standard endpoints, and 30s connect / 1 hour read for the enterprise endpoint (which can legitimately process multi-hour files). Inject your own `HttpClient` or `HttpClientEngine` to override.
+**Timeouts.** Default Ktor timeouts are 30s connect / 60s read for standard endpoints, and 30s connect / 1 hour read for the enterprise endpoint. A longpoll request gets its `timeoutSeconds` plus 15 seconds when that is longer. Inject your own `HttpClient` or `HttpClientEngine` to override.
 
 **Retries.** Calls are classified by cost and retried accordingly:
 
@@ -220,7 +222,9 @@ val audd = AudD(
 | `MUTATING`    | `streams.setCallbackUrl`, `streams.add`, `streams.delete` | pre-upload connection errors only (server-idempotent on `radio_id`) |
 | `CRITICAL`    | `customCatalog.add`                                       | never — exactly one attempt                              |
 
-`RECOGNITION` will not double-bill your account: once the server has accepted bytes, a 5xx after that is surfaced rather than retried. `customCatalog.add` is metered and uses the `CRITICAL` class — a transient failure surfaces as a clean exception so an automatic re-upload can never double-charge for the same audio fingerprinting.
+`RECOGNITION` will not double-bill your account: once the server has accepted bytes, a 5xx after that is surfaced rather than retried. `customCatalog.add` uses the `CRITICAL` class: it is never retried automatically, so check the error before sending it again (an upload to an `audioId` that already holds a song replaces it).
+
+`maxRetries` counts attempts, the first one included: `maxRetries = 1` (or `0`) sends each call once.
 
 **Custom HTTP client.** Pass `engine = ` (`HttpClientEngine`) or `httpClient = ` (a fully-configured `HttpClient`) to plug in proxies, mTLS, custom transports, or shared connection pools.
 
@@ -252,7 +256,7 @@ import io.audd.parseCallback
 when (val parsed = parseCallback(bodyBytes)) {
     is CallbackEvent.Match -> {
         val m = parsed.match
-        println("matched: ${m.song.artist} — ${m.song.title} score=${m.song.score}")
+        println("matched: ${m.song?.artist} — ${m.song?.title} score=${m.song?.score}")
         for (alt in m.alternatives) {
             // Rare. Variant catalog releases (clean / explicit / single vs album)
             // can land here with a different artist or title.
@@ -284,7 +288,7 @@ fun Application.auddRoutes() {
     routing {
         post("/audd/callback") {
             when (val ev = parseCallback(call.receive<ByteArray>())) {
-                is CallbackEvent.Match        -> log.info("${ev.match.song.artist} — ${ev.match.song.title}")
+                is CallbackEvent.Match        -> log.info("${ev.match.song?.artist} — ${ev.match.song?.title}")
                 is CallbackEvent.Notification -> log.info(ev.notification.notificationMessage)
             }
             call.respond(io.ktor.http.HttpStatusCode.OK)
@@ -343,7 +347,7 @@ fun main() = runBlocking {
         val radioId = 1L // any integer you choose — your handle for this stream
         audd.streams.longpoll(radioId).use { poll ->
             coroutineScope {
-                launch { poll.matches.collect { m -> println("${m.song.artist} — ${m.song.title}") } }
+                launch { poll.matches.collect { m -> println("${m.song?.artist} — ${m.song?.title}") } }
                 launch { poll.notifications.collect { n -> println("notif: ${n.notificationMessage}") } }
                 launch { poll.errors.collect { err -> throw err } }
             }
@@ -352,7 +356,11 @@ fun main() = runBlocking {
 }
 ```
 
-The poll advances `since_time` automatically across iterations. Errors are terminal: when one fires on `errors`, the producer stops and all three flows complete. `poll.close()` (or exiting `use { }`) cancels the producer.
+Each response's events arrive in order: recognitions on `matches`, stream notifications on `notifications`. An event without a song is skipped. The poll advances `since_time` automatically, so the next request asks only for newer events. A response with nothing new and no newer server time (an empty or unreadable body, say) is followed by a wait before the next request: 1 second, doubling up to 30 seconds, and back to none once a response brings something new.
+
+Network errors and HTTP 5xx are retried within the client's `maxRetries` budget (`maxAttempts` on `LongpollConsumer`). Errors are terminal: an error the server returns (an invalid `timeoutSeconds`, say), any other HTTP error, or a network failure that outlasts the retries arrives once on `errors`, the producer stops and all three flows complete. `poll.close()` (or exiting `use { }`) cancels the producer, including a request or a wait in progress; closing the `AudD` client ends its polls too. `matches` buffers without limit and `notifications` keeps the 64 most recent, so a flow you don't collect never holds up the others.
+
+`LongpollOptions` sets `sinceTime` (milliseconds since the epoch), `timeoutSeconds` (how long the server holds each request open while there is nothing new: 1 to 120, default 50) and `skipCallbackCheck`.
 
 `deriveLongpollCategory` is a local computation: `MD5(MD5(api_token) + radio_id)[:9]`. The category alone is sufficient to subscribe — the api_token is never sent over the wire for longpolls.
 
@@ -371,7 +379,7 @@ fun main() = runBlocking {
     LongpollConsumer(category = "abc123def").use { consumer ->
         consumer.iterate().use { poll ->
             coroutineScope {
-                launch { poll.matches.collect { m -> println("${m.song.artist} — ${m.song.title}") } }
+                launch { poll.matches.collect { m -> println("${m.song?.artist} — ${m.song?.title}") } }
                 launch { poll.notifications.collect { n -> println(n.notificationMessage) } }
                 launch { poll.errors.collect { err -> throw err } }
             }

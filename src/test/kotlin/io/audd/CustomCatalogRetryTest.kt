@@ -13,9 +13,9 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * customCatalog.add is metered. A transparent retry on transport failure could
- * double-charge for the same audio fingerprinting. The SDK ships a `CRITICAL`
- * retry class that performs exactly one attempt and is independent of
+ * customCatalog.add is never retried automatically: the caller checks the
+ * error before sending the upload again. The SDK ships a `CRITICAL` retry
+ * class that performs exactly one attempt and is independent of
  * `AudD(maxRetries = ...)` — these tests pin that contract.
  */
 class CustomCatalogRetryTest {

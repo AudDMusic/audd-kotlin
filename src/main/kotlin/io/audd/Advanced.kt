@@ -41,12 +41,7 @@ public class Advanced internal constructor(
      */
     public suspend fun rawRequest(method: String, params: Map<String, String> = emptyMap()): JsonObject {
         val resp = retry(recognitionPolicy, shouldRetryByResponse = { shouldRetryResponse(it.httpStatus, RetryClass.RECOGNITION) }) {
-            try {
-                http.postForm("$apiBase/$method/", params)
-            } catch (exc: Throwable) {
-                if (shouldRetryException(exc, RetryClass.RECOGNITION)) throw exc
-                throw AudDConnectionException(exc.message ?: exc.toString(), original = exc)
-            }
+            transportAttempt(RetryClass.RECOGNITION) { http.postForm("$apiBase/$method/", params) }
         }
         val parsed = runCatching { auddJson.parseToJsonElement(resp.body) as? JsonObject }
             .getOrNull()

@@ -17,7 +17,10 @@ public sealed class Source {
     public data class Url(val url: String) : Source()
 
     /** A filesystem path. The file is opened fresh on each retry attempt. */
-    public data class FilePath(val file: File) : Source()
+    public data class FilePath(val file: File) : Source() {
+        /** A filesystem path given as a string, e.g. `Source.FilePath("/path/to/clip.mp3")`. */
+        public constructor(path: String) : this(File(path))
+    }
 
     /** Raw bytes already in memory. Each retry sends a copy of the same buffer. */
     public data class Bytes(val bytes: ByteArray) : Source() {

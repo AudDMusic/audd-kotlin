@@ -9,8 +9,8 @@ repositories {
 }
 
 dependencies {
-    implementation("io.audd:audd-kotlin:1.5.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation("io.audd:audd-kotlin:1.5.19")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.slf4j:slf4j-simple:2.0.13")
 }
 

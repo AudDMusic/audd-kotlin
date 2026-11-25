@@ -4,6 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.pluginOrNull
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
@@ -82,6 +84,7 @@ internal class AudDHttp(
         tokenRef.set(newToken)
     }
 
+    /** POST a multipart form. The api_token travels in the form body, never in the URL. */
     suspend fun postForm(url: String, data: Map<String, String>, file: FilePart? = null): HttpResult {
         val full = data.toMutableMap()
         full["api_token"] = tokenRef.get()
@@ -108,12 +111,26 @@ internal class AudDHttp(
         return wrap(response)
     }
 
-    suspend fun get(url: String, params: Map<String, String>): HttpResult {
-        val full = params.toMutableMap()
-        full.putIfAbsent("api_token", tokenRef.get())
+    /**
+     * GET without the api_token. The one GET endpoint, longpoll, is
+     * authorized by its category, so the token never goes into a URL (where
+     * proxies, access logs and exception messages would see it).
+     *
+     * @param minTimeoutMillis when set, the request and socket timeouts of this
+     *   call are raised to at least this value (for a longpoll that holds the
+     *   connection open while it waits for events).
+     */
+    suspend fun get(url: String, params: Map<String, String>, minTimeoutMillis: Long? = null): HttpResult {
         val response = client.get(url) {
             headers { append(HttpHeaders.UserAgent, userAgent()) }
-            full.forEach { (k, v) -> parameter(k, v) }
+            params.forEach { (k, v) -> if (k != "api_token") parameter(k, v) }
+            if (minTimeoutMillis != null && client.pluginOrNull(HttpTimeout) != null) {
+                val millis = maxOf(minTimeoutMillis, timeouts.readMillis)
+                timeout {
+                    requestTimeoutMillis = millis
+                    socketTimeoutMillis = millis
+                }
+            }
         }
         return wrap(response)
     }

@@ -4,8 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 
 /**
  * Tokenless longpoll consumer — for browser/widget/extension use cases that
@@ -27,6 +27,12 @@ import kotlinx.coroutines.cancel
  *     }
  * }
  * ```
+ *
+ * @param maxAttempts attempts per longpoll request on network errors and
+ *   HTTP 5xx, the first one included (values below 1 count as 1). See
+ *   [LongpollPoll] for how the subscription runs.
+ * @param backoffFactor base for the exponential backoff between those
+ *   attempts, in seconds.
  */
 public class LongpollConsumer(
     private val category: String,
@@ -44,6 +50,9 @@ public class LongpollConsumer(
     )
     private val policy: RetryPolicy = RetryPolicy(RetryClass.READ, maxAttempts, backoffFactor)
 
+    /** Parent of every subscription started by [iterate]; [close] cancels them. */
+    private val polls: Job = SupervisorJob()
+
     /**
      * Start a long-poll subscription with the consumer's category. Returns a
      * [LongpollPoll] — same shape as [Streams.longpoll], minus the
@@ -51,7 +60,7 @@ public class LongpollConsumer(
      */
     public fun iterate(opts: LongpollOptions = LongpollOptions(skipCallbackCheck = true)): LongpollPoll {
         return LongpollPoll.start(
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            scope = CoroutineScope(SupervisorJob(polls) + Dispatchers.Default),
             ownsScope = true,
             source = StreamsLongpollSource(http, policy, LONGPOLL_URL),
             category = category,
@@ -60,7 +69,9 @@ public class LongpollConsumer(
         )
     }
 
+    /** Ends every subscription started by [iterate], then releases the HTTP transport. */
     override fun close() {
+        polls.cancel()
         http.close()
     }
 

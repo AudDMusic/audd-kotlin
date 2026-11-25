@@ -2,6 +2,8 @@ package io.audd
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicReference
 
@@ -36,7 +38,14 @@ import java.util.concurrent.atomic.AtomicReference
  * so they never break the request path. Events never carry the api_token or
  * body bytes.
  *
- * @property maxRetries per-request retry budget for cost-aware retries.
+ * API and network failures surface as [AudDException]s; a network failure is
+ * an [AudDConnectionException]. Invalid arguments throw
+ * [IllegalArgumentException]. Coroutine cancellation (including `withTimeout`)
+ * propagates unchanged and cancels the request in flight.
+ *
+ * @property maxRetries per-request attempt budget for cost-aware retries: the
+ *   total number of attempts per call, the first one included. `1` (or `0`)
+ *   means a single attempt with no retries.
  * @property backoffFactor base for exponential backoff in seconds.
  * @property onDeprecation hook for code-51 deprecation warnings — defaults to
  *   logging via SLF4J (`io.audd.AudD`). Override to capture or silence.
@@ -74,14 +83,19 @@ public class AudD(
     private val mutatingPolicy: RetryPolicy get() = RetryPolicy(RetryClass.MUTATING, maxRetries, backoffFactor)
 
     /**
-     * Custom-catalog upload is metered; an automatic retry on transport failure
-     * could double-charge for the same audio fingerprinting. `maxAttempts = 1`
+     * Custom-catalog uploads are never retried automatically: the caller
+     * checks the error before sending the upload again. `maxAttempts = 1`
      * here is intentional and is NOT influenced by [maxRetries].
      */
     private val criticalPolicy: RetryPolicy get() = RetryPolicy(RetryClass.CRITICAL, maxAttempts = 1, backoffFactor = backoffFactor)
 
+    /** Parent of every longpoll subscription started from [streams]; [close] cancels them. */
+    private val longpolls: Job = SupervisorJob()
+
     /** Streams namespace — set callback URL, manage stream slots, longpoll for events. */
-    public val streams: Streams by lazy { Streams(http, readPolicy, mutatingPolicy) { tokenRef.get() } }
+    public val streams: Streams by lazy {
+        Streams(http, readPolicy, mutatingPolicy, pollParent = longpolls) { tokenRef.get() }
+    }
 
     /**
      * Custom-catalog namespace.
@@ -142,12 +156,7 @@ public class AudD(
                     if (ret != null) put("return", ret)
                     if (market != null) put("market", market)
                 }
-                try {
-                    http.postForm(url, data, part.file)
-                } catch (exc: Throwable) {
-                    if (shouldRetryException(exc, RetryClass.RECOGNITION)) throw exc
-                    throw AudDConnectionException(exc.message ?: exc.toString(), original = exc)
-                }
+                transportAttempt(RetryClass.RECOGNITION) { http.postForm(url, data, part.file) }
             }
         } catch (exc: Throwable) {
             emitEvent(
@@ -212,12 +221,7 @@ public class AudD(
                     if (extraParameters != null) putAll(extraParameters)
                     putAll(extra)
                 }
-                try {
-                    enterpriseHttp.postForm(url, data, part.file)
-                } catch (exc: Throwable) {
-                    if (shouldRetryException(exc, RetryClass.RECOGNITION)) throw exc
-                    throw AudDConnectionException(exc.message ?: exc.toString(), original = exc)
-                }
+                transportAttempt(RetryClass.RECOGNITION) { enterpriseHttp.postForm(url, data, part.file) }
             }
         } catch (exc: Throwable) {
             emitEvent(
@@ -244,7 +248,9 @@ public class AudD(
         return decodeEnterprise(resp.httpStatus, resp.body, resp.requestId, onDeprecation)
     }
 
+    /** Ends every longpoll subscription started from [streams] and releases both HTTP transports. */
     override fun close() {
+        longpolls.cancel()
         http.close()
         enterpriseHttp.close()
     }

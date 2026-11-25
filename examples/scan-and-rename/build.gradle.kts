@@ -9,7 +9,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.audd:audd-kotlin:1.5.19")
+    implementation("io.audd:audd-kotlin:1.6.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     // jaudiotagger is LGPL-2.1 — see README for licensing implications.
     implementation("net.jthink:jaudiotagger:3.0.1")

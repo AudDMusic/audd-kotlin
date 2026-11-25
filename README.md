@@ -12,7 +12,7 @@ The API itself is so simple that it can easily be used even without an SDK: [doc
 ## Quickstart
 
 ```kotlin
-implementation("io.audd:audd-kotlin:1.5.19")
+implementation("io.audd:audd-kotlin:1.6.0")
 ```
 
 Get your API token at [dashboard.audd.io](https://dashboard.audd.io).
@@ -226,7 +226,7 @@ val audd = AudD(
 
 `maxRetries` counts attempts, the first one included: `maxRetries = 1` (or `0`) sends each call once.
 
-**Custom HTTP client.** Pass `engine = ` (`HttpClientEngine`) or `httpClient = ` (a fully-configured `HttpClient`) to plug in proxies, mTLS, custom transports, or shared connection pools.
+**Custom HTTP client.** The SDK is built on Ktor 3. Pass `engine = ` (`HttpClientEngine`) or `httpClient = ` (a fully-configured `HttpClient`) to plug in proxies, mTLS, custom transports, or shared connection pools.
 
 **Inspection.** Pass `onEvent = ` to receive an immutable `AudDEvent` for every request / response / exception — useful for metrics, tracing, or dropping a `requestId` into your logs. Events never carry the api_token or request bytes; exceptions raised from the hook are swallowed so observability can't break the request path.
 
